@@ -1,0 +1,5 @@
+﻿<Application x:Class="Yiju.App"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <!-- 入口在代码里（要先建托盘与卡片），这里不写 StartupUri -->
+</Application>

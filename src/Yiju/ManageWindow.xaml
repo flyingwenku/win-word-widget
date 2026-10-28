@@ -1,0 +1,74 @@
+<Window x:Class="Yiju.ManageWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="一句 · 句子管理"
+        Width="660" Height="620"
+        MinWidth="520" MinHeight="420"
+        WindowStartupLocation="CenterScreen"
+        Background="#FFF6F5F4">
+    <DockPanel Margin="14">
+
+        <!-- 列表切换 + 列表管理 -->
+        <DockPanel DockPanel.Dock="Top" Margin="0,0,0,12">
+            <Button x:Name="BtnLists"
+                    DockPanel.Dock="Left"
+                    Content="管理列表"
+                    Padding="12,6"
+                    Margin="8,0,0,0"
+                    Click="BtnLists_Click" />
+            <ComboBox x:Name="CbLists" Padding="8,6" SelectionChanged="CbLists_SelectionChanged" />
+        </DockPanel>
+
+        <!-- 显示方式 + 固定句 -->
+        <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Margin="0,0,0,12">
+            <ComboBox x:Name="CbMode" Width="130" Padding="8,6" SelectionChanged="CbMode_SelectionChanged" />
+            <ComboBox x:Name="CbFixed" Width="300" Padding="8,6" Margin="8,0,0,0"
+                      SelectionChanged="CbFixed_SelectionChanged" />
+        </StackPanel>
+
+        <!-- 添加一行 -->
+        <DockPanel DockPanel.Dock="Top" Margin="0,0,0,12">
+            <Button x:Name="BtnAdd"
+                    DockPanel.Dock="Right"
+                    Content="添加"
+                    Padding="16,6"
+                    Margin="10,0,0,0"
+                    Click="BtnAdd_Click" />
+            <UniformGrid Columns="2">
+                <StackPanel>
+                    <TextBlock Text="句子" FontSize="11" Foreground="#FF6B6A69" Margin="0,0,0,3" />
+                    <TextBox x:Name="TbNew" Padding="6" FontSize="14" KeyDown="TbNew_KeyDown" />
+                </StackPanel>
+                <StackPanel Margin="10,0,0,0">
+                    <TextBlock Text="出处（可留空）" FontSize="11" Foreground="#FF6B6A69" Margin="0,0,0,3" />
+                    <TextBox x:Name="TbNewSource" Padding="6" FontSize="14" KeyDown="TbNew_KeyDown" />
+                </StackPanel>
+            </UniformGrid>
+        </DockPanel>
+
+        <!-- 句子列表 -->
+        <ListBox x:Name="LbItems"
+                 Background="White"
+                 BorderBrush="#FFDAD8D7"
+                 HorizontalContentAlignment="Stretch"
+                 ScrollViewer.HorizontalScrollBarVisibility="Disabled">
+            <ListBox.ItemTemplate>
+                <DataTemplate>
+                    <DockPanel Margin="2,6">
+                        <!-- 每行的编辑/删除必须是显式按钮：藏在"双击"里用户根本发现不了 -->
+                        <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" Margin="12,0,0,0">
+                            <Button Content="编辑" Padding="10,4" Margin="0,0,6,0"
+                                    Tag="{Binding Id}" Click="BtnEdit_Click" />
+                            <Button Content="删除" Padding="10,4"
+                                    Tag="{Binding Id}" Click="BtnDelete_Click" />
+                        </StackPanel>
+                        <StackPanel>
+                            <TextBlock Text="{Binding Text}" FontSize="14" TextWrapping="Wrap" />
+                            <TextBlock Text="{Binding Source}" FontSize="11" Foreground="#FF6B6A69" Margin="0,3,0,0" />
+                        </StackPanel>
+                    </DockPanel>
+                </DataTemplate>
+            </ListBox.ItemTemplate>
+        </ListBox>
+    </DockPanel>
+</Window>

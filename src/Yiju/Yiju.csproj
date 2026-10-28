@@ -1,0 +1,31 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <Nullable>disable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <UseWPF>true</UseWPF>
+    <!-- 只为两样东西：托盘图标 NotifyIcon + 把 Bitmap 转成 Icon -->
+    <UseWindowsForms>true</UseWindowsForms>
+    <AssemblyName>Yiju</AssemblyName>
+    <RootNamespace>Yiju</RootNamespace>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <!-- DPI 写在 app.manifest 里（自带清单时该属性不生效），放行 SDK 的建议警告 -->
+    <NoWarn>$(NoWarn);WFAC010</NoWarn>
+    <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
+    <Version>1.0.0</Version>
+    <EnableWindowsTargeting>true</EnableWindowsTargeting>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!--
+      开了 UseWindowsForms 之后，SDK 会把 System.Drawing / System.Windows.Forms 做成全局隐式导入，
+      于是 Color、Point、KeyEventArgs 全部与 WPF 的同名类型撞车（CS0104）。
+      这里把这两个隐式导入去掉，只在托盘图标那个文件里显式 using。
+    -->
+    <Using Remove="System.Drawing" />
+    <Using Remove="System.Windows.Forms" />
+  </ItemGroup>
+
+</Project>
