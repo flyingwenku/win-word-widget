@@ -14,15 +14,14 @@ public partial class ManageWindow : Window
 {
     private static ManageWindow _instance;
 
-    private readonly CardWindow _card;
     private readonly SentenceStore _store;
-    private readonly AppConfig _cfg;
+    private CardConfig _cfg;
 
-    public ManageWindow(CardWindow card, SentenceStore store, AppConfig cfg)
+    /// <summary>管的是"某一张卡片"的设置（列表、模式、固定句），句子库本身是全局共用的</summary>
+    public ManageWindow(CardConfig cfg, SentenceStore store)
     {
         InitializeComponent();
 
-        _card = card;
         _store = store;
         _cfg = cfg;
 
@@ -31,6 +30,34 @@ public partial class ManageWindow : Window
         CbMode.Items.Add(new ComboBoxItem { Content = "每日一句", Tag = Mode.Daily });
         CbMode.Items.Add(new ComboBoxItem { Content = "固定这一句", Tag = Mode.Fixed });
 
+        ReloadFromConfig();
+    }
+
+    /// <summary>只开一个管理页（点两次不该弹出两个）；换了卡片就切过去，不新开窗口</summary>
+    public static void ShowOrActivate(CardConfig cfg, SentenceStore store)
+    {
+        if (_instance == null)
+        {
+            _instance = new ManageWindow(cfg, store);
+            _instance.Closed += (_, __) => _instance = null;
+            _instance.Show();
+            return;
+        }
+
+        if (!ReferenceEquals(_instance._cfg, cfg)) _instance.SwitchTo(cfg);
+
+        if (_instance.WindowState == WindowState.Minimized) _instance.WindowState = WindowState.Normal;
+        _instance.Activate();
+    }
+
+    private void SwitchTo(CardConfig cfg)
+    {
+        _cfg = cfg;
+        ReloadFromConfig();
+    }
+
+    private void ReloadFromConfig()
+    {
         foreach (ComboBoxItem item in CbMode.Items)
         {
             if (item.Tag is Mode m && m == _cfg.Mode) { CbMode.SelectedItem = item; break; }
@@ -38,22 +65,6 @@ public partial class ManageWindow : Window
         if (CbMode.SelectedItem == null) CbMode.SelectedIndex = 0;
 
         RefreshLists();
-    }
-
-    /// <summary>只开一个管理页（点两次托盘菜单不该弹出两个）</summary>
-    public static void ShowOrActivate(CardWindow card, SentenceStore store, AppConfig cfg)
-    {
-        if (_instance == null)
-        {
-            _instance = new ManageWindow(card, store, cfg);
-            _instance.Closed += (_, __) => _instance = null;
-            _instance.Show();
-        }
-        else
-        {
-            if (_instance.WindowState == WindowState.Minimized) _instance.WindowState = WindowState.Normal;
-            _instance.Activate();
-        }
     }
 
     private SentenceList CurrentList => CbLists.SelectedItem as SentenceList ?? _store.First();
@@ -97,7 +108,7 @@ public partial class ManageWindow : Window
         _cfg.ListId = list.Id;
         _cfg.Save();
         RefreshItems();
-        _card?.Refresh();
+        CardWindow.RefreshAll();
     }
 
     private void CbMode_SelectionChanged(object sender, SelectionChangedEventArgs e)
@@ -106,7 +117,7 @@ public partial class ManageWindow : Window
         _cfg.Mode = mode;
         _cfg.Save();
         RefreshFixed();
-        _card?.Refresh();
+        CardWindow.RefreshAll();
     }
 
     private void CbFixed_SelectionChanged(object sender, SelectionChangedEventArgs e)
@@ -114,7 +125,7 @@ public partial class ManageWindow : Window
         if (CbFixed.SelectedItem is not Sentence s) return;
         _cfg.FixedId = s.Id;
         _cfg.Save();
-        _card?.Refresh();
+        CardWindow.RefreshAll();
     }
 
     private void BtnLists_Click(object sender, RoutedEventArgs e)
@@ -178,7 +189,7 @@ public partial class ManageWindow : Window
         _cfg.ListId = _store.First()?.Id ?? -1;
         _cfg.Save();
         RefreshLists();
-        _card?.Refresh();
+        CardWindow.RefreshAll();
     }
 
     // ===== 句子 =====

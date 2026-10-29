@@ -11,7 +11,7 @@ namespace Yiju.Services;
 internal static class Picker
 {
     /// <summary>当前这句（不推进游标）</summary>
-    public static Sentence Current(AppConfig cfg, SentenceStore store)
+    public static Sentence Current(CardConfig cfg, SentenceStore store)
     {
         var list = store.Get(cfg.ListId) ?? store.First();
         if (list == null || list.Items.Count == 0) return null;
@@ -26,7 +26,7 @@ internal static class Picker
     }
 
     /// <summary>换下一句（会推进游标并落盘）</summary>
-    public static Sentence Next(AppConfig cfg, SentenceStore store)
+    public static Sentence Next(CardConfig cfg, SentenceStore store)
     {
         var list = store.Get(cfg.ListId) ?? store.First();
         if (list == null || list.Items.Count == 0) return null;

@@ -16,14 +16,17 @@ namespace Yiju.Services;
 internal sealed class TrayIcon : IDisposable
 {
     private readonly Forms.NotifyIcon _icon;
-    private readonly CardWindow _card;
     private readonly SentenceStore _store;
     private readonly AppConfig _cfg;
     private readonly Forms.ToolStripMenuItem _bootItem;
 
-    public TrayIcon(CardWindow card, SentenceStore store, AppConfig cfg)
+    /// <param name="newCard">新建一张卡片（由 App 决定怎么排位置）</param>
+    /// <param name="nextAll">所有卡片一起换一句</param>
+    /// <param name="activeCard">管理页要编辑的那张卡片（没卡片时会先建一张）</param>
+    /// <param name="exit">退出整个程序</param>
+    public TrayIcon(AppConfig cfg, SentenceStore store, Action newCard, Action nextAll,
+        Func<CardConfig> activeCard, Action exit)
     {
-        _card = card;
         _store = store;
         _cfg = cfg;
 
@@ -37,12 +40,18 @@ internal sealed class TrayIcon : IDisposable
         var menu = new Forms.ContextMenuStrip();
 
         var manageItem = new Forms.ToolStripMenuItem("管理句子…");
-        manageItem.Click += (_, __) => ManageWindow.ShowOrActivate(_card, _store, _cfg);
+        manageItem.Click += (_, __) => ManageWindow.ShowOrActivate(activeCard(), _store);
         menu.Items.Add(manageItem);
 
-        var nextItem = new Forms.ToolStripMenuItem("换一句");
-        nextItem.Click += (_, __) => _card.NextSentence();
+        var newCardItem = new Forms.ToolStripMenuItem("新建卡片");
+        newCardItem.Click += (_, __) => newCard();
+        menu.Items.Add(newCardItem);
+
+        var nextItem = new Forms.ToolStripMenuItem("所有卡片换一句");
+        nextItem.Click += (_, __) => nextAll();
         menu.Items.Add(nextItem);
+
+        menu.Items.Add(SchemeMenu(_cfg));
 
         _bootItem = new Forms.ToolStripMenuItem("开机自启") { CheckOnClick = true };
         _bootItem.Checked = AutoStart.IsEnabled;
@@ -57,7 +66,7 @@ internal sealed class TrayIcon : IDisposable
         menu.Items.Add(new Forms.ToolStripSeparator());
 
         var exitItem = new Forms.ToolStripMenuItem("退出");
-        exitItem.Click += (_, __) => Wpf.Application.Current.Shutdown();
+        exitItem.Click += (_, __) => exit();
         menu.Items.Add(exitItem);
 
         _icon.ContextMenuStrip = menu;
@@ -71,6 +80,25 @@ internal sealed class TrayIcon : IDisposable
                 mi?.Invoke(_icon, null);
             }
         };
+    }
+
+    /// <summary>配色方案子菜单：全局切换，所有卡片统一</summary>
+    private static Forms.ToolStripMenuItem SchemeMenu(AppConfig cfg)
+    {
+        var item = new Forms.ToolStripMenuItem("配色方案");
+
+        for (var i = 0; i < Palette.Schemes.Length; i++)
+        {
+            var idx = i;
+            var mi = new Forms.ToolStripMenuItem(Palette.Schemes[idx].Name)
+            {
+                Checked = cfg.ColorScheme == idx
+            };
+            mi.Click += (_, __) => CardWindow.SetScheme(idx);
+            item.DropDownItems.Add(mi);
+        }
+
+        return item;
     }
 
     /// <summary>

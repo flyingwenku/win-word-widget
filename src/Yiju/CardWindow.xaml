@@ -6,18 +6,27 @@
         WindowStyle="None"
         ResizeMode="NoResize"
         ShowInTaskbar="False"
-        AllowsTransparency="False"
-        Background="#FFB8B6B5"
+        AllowsTransparency="True"
+        Background="Transparent"
         SnapsToDevicePixels="True"
         UseLayoutRounding="True"
         TextOptions.TextFormattingMode="Display">
     <!--
-      卡片：没有标题栏、不在任务栏、不在 Alt+Tab。
-      圆角靠 SetWindowRgn 切出来（不用 WS_EX_LAYERED —— 跨进程挂到壁纸层之后分层窗口不可靠）。
+      卡片就是一个**普通顶层窗口**：代码里给它加了 WS_EX_TOOLWINDOW（不进 Alt+Tab）
+      并压到 HWND_BOTTOM（待在所有应用窗口下面）。
+
+      以前是跨进程 SetParent 到 Explorer 的 WorkerW，为此付了一连串代价（详见 docs/display-plan.md）：
+        ・鼠标消息被铺满整屏的图标层吃掉 → 点不到、拖不动
+        ・DWM 合成断层 → 算出来的颜色和屏幕上显示的不一致，还会留在旧画面上
+        ・窗口销毁时桌面不重画 → 退出后屏幕上留下点不掉的鬼影
+      换成普通窗口后这些全部消失。圆角也顺带交给 XAML + 分层窗口，不再需要 SetWindowRgn 切圆角。
+
+      注意：不要给任何元素设 Opacity / Effect —— 半透明要写在**背景色的 alpha 里**，
+      文字必须保持完全不透明（UIElement.Opacity 会把字一起弄淡，那正是"看不清"的来源）。
     -->
     <Grid>
         <Border x:Name="Card"
-                Background="#FFB8B6B5"
+                Background="#FFFFFFFF"
                 CornerRadius="14">
             <Grid Margin="18,14">
                 <Grid.RowDefinitions>

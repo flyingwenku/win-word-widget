@@ -12,6 +12,9 @@ internal static class Paths
     public static readonly string ListsFile = Path.Combine(Root, "lists.json");
     public static readonly string ConfigFile = Path.Combine(Root, "config.json");
 
+    /// <summary>埋点日志（排查"鼠标消息有没有送到卡片"这类问题用）</summary>
+    public static readonly string TraceFile = Path.Combine(Root, "trace.log");
+
     public static void Ensure()
     {
         Directory.CreateDirectory(Root);
