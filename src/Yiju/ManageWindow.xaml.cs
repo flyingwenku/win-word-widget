@@ -9,6 +9,9 @@ namespace Yiju;
 
 /// <summary>
 /// 句子管理页：多列表 + 句子增删改查，逻辑与 Android 端 v1.2 一致。
+///
+/// 所有指向列表/句子的地方一律用 **Uuid**（理由见 SentenceStore 顶部说明）；
+/// 显示的句子列表只取没删掉的，墓碑是给同步用的，用户不该看见。
 /// </summary>
 public partial class ManageWindow : Window
 {
@@ -73,12 +76,12 @@ public partial class ManageWindow : Window
 
     private void RefreshLists()
     {
-        var keep = _cfg.ListId;
+        var keep = _cfg.ListUuid;
 
         CbLists.SelectionChanged -= CbLists_SelectionChanged;
         CbLists.ItemsSource = _store.Lists.ToList();
 
-        var target = _store.Get(keep) ?? _store.First();
+        var target = (!string.IsNullOrEmpty(keep) ? _store.Get(keep) : null) ?? _store.First();
         CbLists.SelectedItem = target;
 
         CbLists.SelectionChanged += CbLists_SelectionChanged;
@@ -88,15 +91,16 @@ public partial class ManageWindow : Window
 
     private void RefreshItems()
     {
-        LbItems.ItemsSource = CurrentList?.Items.ToList() ?? new List<Sentence>();
+        // 只显示没删掉的（墓碑是给同步用的，用户不该看见）
+        LbItems.ItemsSource = CurrentList?.Alive() ?? new List<Sentence>();
         RefreshFixed();
     }
 
     private void RefreshFixed()
     {
-        var items = CurrentList?.Items.ToList() ?? new List<Sentence>();
+        var items = CurrentList?.Alive() ?? new List<Sentence>();
         CbFixed.ItemsSource = items;
-        CbFixed.SelectedItem = items.FirstOrDefault(i => i.Id == _cfg.FixedId) ?? items.FirstOrDefault();
+        CbFixed.SelectedItem = items.FirstOrDefault(i => i.Uuid == _cfg.FixedUuid) ?? items.FirstOrDefault();
         CbFixed.Visibility = _cfg.Mode == Mode.Fixed ? Visibility.Visible : Visibility.Collapsed;
     }
 
@@ -105,7 +109,7 @@ public partial class ManageWindow : Window
     private void CbLists_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
         if (CbLists.SelectedItem is not SentenceList list) return;
-        _cfg.ListId = list.Id;
+        _cfg.ListUuid = list.Uuid;
         _cfg.Save();
         RefreshItems();
         CardWindow.RefreshAll();
@@ -123,7 +127,7 @@ public partial class ManageWindow : Window
     private void CbFixed_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
         if (CbFixed.SelectedItem is not Sentence s) return;
-        _cfg.FixedId = s.Id;
+        _cfg.FixedUuid = s.Uuid;
         _cfg.Save();
         CardWindow.RefreshAll();
     }
@@ -154,7 +158,7 @@ public partial class ManageWindow : Window
         if (!ok || string.IsNullOrWhiteSpace(name)) return;
 
         var list = _store.AddList(name);
-        _cfg.ListId = list.Id;
+        _cfg.ListUuid = list.Uuid;
         _cfg.Save();
         RefreshLists();
     }
@@ -167,7 +171,7 @@ public partial class ManageWindow : Window
         var (ok, name, _) = PromptWindow.Show(this, "重命名列表", "列表名", list.Name, null, null);
         if (!ok || string.IsNullOrWhiteSpace(name)) return;
 
-        _store.RenameList(list.Id, name);
+        _store.RenameList(list.Uuid, name);
         RefreshLists();
     }
 
@@ -185,8 +189,8 @@ public partial class ManageWindow : Window
         if (MessageBox.Show(this, $"删除列表「{list.Name}」？里面的句子一起删掉。", "一句",
                 MessageBoxButton.YesNo, MessageBoxImage.Warning) != MessageBoxResult.Yes) return;
 
-        _store.DeleteList(list.Id);
-        _cfg.ListId = _store.First()?.Id ?? -1;
+        _store.DeleteList(list.Uuid);
+        _cfg.ListUuid = _store.First()?.Uuid ?? "";
         _cfg.Save();
         RefreshLists();
         CardWindow.RefreshAll();
@@ -210,7 +214,7 @@ public partial class ManageWindow : Window
             return;
         }
 
-        _store.AddSentence(CurrentList?.Id ?? -1, text, TbNewSource.Text);
+        _store.AddSentence(CurrentList?.Uuid ?? "", text, TbNewSource.Text);
         TbNew.Clear();
         TbNewSource.Clear();
         TbNew.Focus();
@@ -219,27 +223,27 @@ public partial class ManageWindow : Window
 
     private void BtnEdit_Click(object sender, RoutedEventArgs e)
     {
-        var id = (long)((Button)sender).Tag;
-        var s = CurrentList?.Items.FirstOrDefault(i => i.Id == id);
+        var uuid = (string)((Button)sender).Tag;
+        var s = CurrentList?.FindAlive(uuid);
         if (s == null) return;
 
         var (ok, text, source) = PromptWindow.Show(this, "编辑", "句子", s.Text, "出处（可留空）", s.Source);
         if (!ok || string.IsNullOrWhiteSpace(text)) return;
 
-        _store.UpdateSentence(CurrentList.Id, id, text, source);
+        _store.UpdateSentence(CurrentList.Uuid, uuid, text, source);
         RefreshItems();
     }
 
     private void BtnDelete_Click(object sender, RoutedEventArgs e)
     {
-        var id = (long)((Button)sender).Tag;
-        var s = CurrentList?.Items.FirstOrDefault(i => i.Id == id);
+        var uuid = (string)((Button)sender).Tag;
+        var s = CurrentList?.FindAlive(uuid);
         if (s == null) return;
 
         if (MessageBox.Show(this, "删除这一句？删了就找不回来了。", "一句",
                 MessageBoxButton.YesNo, MessageBoxImage.Warning) != MessageBoxResult.Yes) return;
 
-        _store.DeleteSentence(CurrentList.Id, id);
+        _store.DeleteSentence(CurrentList.Uuid, uuid);
         RefreshItems();
     }
 }

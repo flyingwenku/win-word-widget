@@ -19,6 +19,7 @@ public partial class App : Application
     private TrayIcon _tray;
     private AppConfig _cfg;
     private SentenceStore _store;
+    private SyncService _sync;
     private readonly List<CardWindow> _cards = new();
 
     /// <summary>正在退出整个程序（这时卡片关掉不该被当成"用户删掉了这张卡片"）</summary>
@@ -48,10 +49,19 @@ public partial class App : Application
         base.OnStartup(e);
         ShutdownMode = ShutdownMode.OnExplicitShutdown;
 
+        // 埋点日志要在一上来就清 —— 放在卡片里清的话，
+        // 会把句子库加载/迁移这些更早写的日志一起擦掉（踩过一次）
+        Yiju.Helpers.Trace.Reset();
+
         Paths.Ensure();
 
         _store = new SentenceStore(Paths.ListsFile);
         _cfg = AppConfig.Load(Paths.ConfigFile);
+        // 句子库已经升级成 uuid 引用了，旧配置里那些数字 id 到这一步才翻译得动
+        _cfg.MigrateReferences(_store);
+
+        // 手机端加了好几条内容、同步过来之后，卡片得跟着重画
+        _store.Changed += () => CardWindow.RefreshAll();
 
         // 手机上能加好几个桌面小部件，这边也一样：配置里有几张就开几张
         foreach (var cc in _cfg.Cards.ToList()) OpenCard(cc);
@@ -61,7 +71,11 @@ public partial class App : Application
                   $"legacy=({_cfg.X},{_cfg.Y},{_cfg.W},{_cfg.H}) " +
                   $"first=({_cfg.Cards[0].X},{_cfg.Cards[0].Y},{_cfg.Cards[0].W},{_cfg.Cards[0].H})");
 
-        _tray = new TrayIcon(_cfg, _store, () => NewCard(), NextAll, ActiveCard, ExitApp);
+        _sync = new SyncService(_cfg, _store);
+        _sync.Start();
+
+        _tray = new TrayIcon(_cfg, _store, () => NewCard(), NextAll, ActiveCard,
+            () => SyncWindow.ShowOrActivate(_cfg, _sync), () => _ = _sync.SyncNow(), ExitApp);
 
         // 之前用户勾了开机自启但 exe 换过位置 → 顺手把注册表里的路径更新掉
         if (_cfg.StartOnBoot && !AutoStart.IsEnabled) AutoStart.Set(true);

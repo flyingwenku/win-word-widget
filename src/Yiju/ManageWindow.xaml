@@ -58,9 +58,9 @@
                         <!-- 每行的编辑/删除必须是显式按钮：藏在"双击"里用户根本发现不了 -->
                         <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" Margin="12,0,0,0">
                             <Button Content="编辑" Padding="10,4" Margin="0,0,6,0"
-                                    Tag="{Binding Id}" Click="BtnEdit_Click" />
+                                    Tag="{Binding Uuid}" Click="BtnEdit_Click" />
                             <Button Content="删除" Padding="10,4"
-                                    Tag="{Binding Id}" Click="BtnDelete_Click" />
+                                    Tag="{Binding Uuid}" Click="BtnDelete_Click" />
                         </StackPanel>
                         <StackPanel>
                             <TextBlock Text="{Binding Text}" FontSize="14" TextWrapping="Wrap" />

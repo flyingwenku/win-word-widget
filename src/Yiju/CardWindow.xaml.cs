@@ -105,8 +105,6 @@ public partial class CardWindow : Window
 
     private void OnSourceReady()
     {
-        Trace.Reset();
-
         var hwnd = new WindowInteropHelper(this).Handle;
         _hwndSource = HwndSource.FromHwnd(hwnd);
         _hwndSource.AddHook(WndProc);

@@ -23,9 +23,11 @@ internal sealed class TrayIcon : IDisposable
     /// <param name="newCard">新建一张卡片（由 App 决定怎么排位置）</param>
     /// <param name="nextAll">所有卡片一起换一句</param>
     /// <param name="activeCard">管理页要编辑的那张卡片（没卡片时会先建一张）</param>
+    /// <param name="openSync">打开同步设置</param>
+    /// <param name="syncNow">立刻同步一次</param>
     /// <param name="exit">退出整个程序</param>
     public TrayIcon(AppConfig cfg, SentenceStore store, Action newCard, Action nextAll,
-        Func<CardConfig> activeCard, Action exit)
+        Func<CardConfig> activeCard, Action openSync, Action syncNow, Action exit)
     {
         _store = store;
         _cfg = cfg;
@@ -52,6 +54,16 @@ internal sealed class TrayIcon : IDisposable
         menu.Items.Add(nextItem);
 
         menu.Items.Add(SchemeMenu(_cfg));
+
+        menu.Items.Add(new Forms.ToolStripSeparator());
+
+        var syncNowItem = new Forms.ToolStripMenuItem("立即同步");
+        syncNowItem.Click += (_, __) => syncNow();
+        menu.Items.Add(syncNowItem);
+
+        var syncItem = new Forms.ToolStripMenuItem("同步设置…");
+        syncItem.Click += (_, __) => openSync();
+        menu.Items.Add(syncItem);
 
         _bootItem = new Forms.ToolStripMenuItem("开机自启") { CheckOnClick = true };
         _bootItem.Checked = AutoStart.IsEnabled;

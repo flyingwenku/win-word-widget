@@ -2,10 +2,57 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Security.Cryptography;
+using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 
 namespace Yiju.Data;
+
+/// <summary>
+/// 同步设置（坚果云 WebDAV）。
+///
+/// 密码不能明文躺在配置文件里 —— 用 DPAPI 按**当前 Windows 用户**加密：
+/// 换了用户或换了机器就解不开（会当成"没设密码"提示重填），但至少不会被人拷走文件就直接看到密码。
+/// </summary>
+public sealed class SyncConfig
+{
+    public string Url { get; set; } = "https://dav.jianguoyun.com/dav/Yiju/yiju-sync.json";
+    public string User { get; set; } = "";
+
+    /// <summary>DPAPI 加密后的密码（base64）</summary>
+    public string EncPassword { get; set; } = "";
+
+    public bool AutoSync { get; set; } = true;
+    public long LastSyncAt { get; set; }
+
+    /// <summary>明码密码只存在于内存里，不落盘</summary>
+    [JsonIgnore]
+    public string Password
+    {
+        get
+        {
+            if (string.IsNullOrEmpty(EncPassword)) return "";
+            try
+            {
+                return Encoding.UTF8.GetString(ProtectedData.Unprotect(Convert.FromBase64String(EncPassword),
+                    null, DataProtectionScope.CurrentUser));
+            }
+            catch
+            {
+                return "";
+            }
+        }
+        set
+        {
+            if (string.IsNullOrEmpty(value)) { EncPassword = ""; return; }
+            EncPassword = Convert.ToBase64String(ProtectedData.Protect(Encoding.UTF8.GetBytes(value),
+                null, DataProtectionScope.CurrentUser));
+        }
+    }
+
+    public bool Ready => !string.IsNullOrWhiteSpace(Url) && !string.IsNullOrWhiteSpace(User) && Password.Length > 0;
+}
 
 public enum Mode
 {
@@ -28,11 +75,20 @@ public sealed class CardConfig
     public double W { get; set; } = 380;
     public double H { get; set; } = 190;
 
-    public long ListId { get; set; } = -1;
+    /// <summary>这张卡片用哪个列表（Uuid）。空 = 跟着第一个列表。
+    /// 以前这里是数字 ListId —— 那是各端自己记账的，跨设备不是同一个东西。</summary>
+    public string ListUuid { get; set; } = "";
+
     public Mode Mode { get; set; } = Mode.Random;
-    public long FixedId { get; set; }
+
+    /// <summary>固定模式下锁定的是哪一句（Uuid）</summary>
+    public string FixedUuid { get; set; } = "";
+
     public int Cursor { get; set; }
-    public long CurrentId { get; set; }
+
+    /// <summary>当前显示到哪一句了（Uuid）</summary>
+    public string CurrentUuid { get; set; } = "";
+
     public int RefreshMinutes { get; set; } = 30;
 
     /// <summary>属于哪个配置文件（改了要能落盘）</summary>
@@ -53,6 +109,9 @@ public sealed class AppConfig
 
     /// <summary>配色方案：索引到 Palette.Schemes。**全局** —— 所有卡片统一，免得一张黑字一张白字</summary>
     public int ColorScheme { get; set; }
+
+    /// <summary>多端同步（坚果云 WebDAV）</summary>
+    public SyncConfig Sync { get; set; } = new();
 
     // 下面这几个是"只有一张卡片"那版的字段。老用户的配置文件里就是这种格式，
     // 读上来之后并进 Cards（见 Migrate），不至于一升级就把位置弄丢。
@@ -111,9 +170,10 @@ public sealed class AppConfig
             {
                 Id = 1,
                 X = X, Y = Y, W = W, H = H,
-                ListId = ListId, Mode = Mode, FixedId = FixedId,
-                Cursor = Cursor, CurrentId = CurrentId,
+                Mode = Mode, Cursor = Cursor,
                 RefreshMinutes = RefreshMinutes
+                // ListUuid / FixedUuid / CurrentUuid 由 MigrateReferences() 补，
+                // 因为要先把数字 id 翻译成 uuid —— 那得等句子库读完才行
             });
         }
 
@@ -122,6 +182,47 @@ public sealed class AppConfig
             Cards[i].Owner = this;
             if (Cards[i].Id == 0) Cards[i].Id = i + 1;   // 老文件里可能没有 Id
         }
+    }
+
+    /// <summary>
+    /// 旧配置里"用哪个列表 / 固定句 / 当前句"存的是数字 id，而句子库升级成 uuid 了，
+    /// 必须拿着句子库才能翻译 —— 所以这一步在 App 里、句子库读完之后再调。
+    /// </summary>
+    public void MigrateReferences(SentenceStore store)
+    {
+        if (ListId <= 0) return;
+
+        var list = store.Lists.FirstOrDefault(l => l.Id == ListId) ?? store.First();
+        if (list == null)
+        {
+            ClearLegacyRefs();
+            Save();
+            return;
+        }
+
+        var fixedS = list.Items.FirstOrDefault(i => i.Id == FixedId);
+        var curS = list.Items.FirstOrDefault(i => i.Id == CurrentId);
+        var translated = false;
+
+        foreach (var c in Cards)
+        {
+            if (!string.IsNullOrEmpty(c.ListUuid)) continue;
+            c.ListUuid = list.Uuid;
+            if (fixedS != null) c.FixedUuid = fixedS.Uuid;
+            if (curS != null) c.CurrentUuid = curS.Uuid;
+            translated = true;
+        }
+
+        // 翻译完把老字段清掉，免得下次又被当成待迁移
+        ClearLegacyRefs();
+        if (translated) Save();
+    }
+
+    private void ClearLegacyRefs()
+    {
+        ListId = -1;
+        FixedId = 0;
+        CurrentId = 0;
     }
 
     public long NewCardId() => Cards.Count == 0 ? 1 : Cards.Max(c => c.Id) + 1;
