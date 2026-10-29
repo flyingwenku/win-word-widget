@@ -165,6 +165,20 @@ https://dav.jianguoyun.com/dav/Yiju/yiju-sync.json
 2. **"合并结果跟远端一字不差就别 PUT"**。否则会陷入
    "同步 → 触发保存 → 保存触发同步" 的空转，白耗坚果云的免费流量。
 
+### 跨端一致性已在 CI 上验证（2026-10-29）
+
+Android 端由 GitHub Actions 云构建（本机没有 JDK / Android SDK，编译不了），
+所以把"两端算出的 uuid 必须一致"写成了**单元测试**，让 CI 把关：
+
+- `app/src/test/java/com/fred/wordwidget/util/StableIdTest.kt`
+  直接断言到 Windows 端**实际生成并存进数据文件**的值
+  （`list:论语` → `5cbd5673-…`，`preset:论语:0/1/2` 三条）
+- `app/src/test/java/com/fred/wordwidget/sync/MergeTest.kt`
+  锁合并规则：两边各加的都要留着、最后写入者胜、墓碑不能被复活、换顺序结果一样
+
+CI 日志里确认执行过（`Task :app:testDebugUnitTest`，非 SKIPPED）并 BUILD SUCCESSFUL，
+即 **Java/Kotlin 侧算出来的 uuid 与 Windows 端严丝合缝**，字节序那个坑不用再担惊受怕。
+
 另外两条经验：
 
 - 预置数据才用稳定 uuid；用户自己建的列表用**随机** uuid —— 否则两端各建了个同名列表
