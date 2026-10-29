@@ -76,6 +76,28 @@ StableUuid(namespaceUuid, name):
 NS = "6b5a1f3c-8d2e-4a7b-9c1d-0e2f3a4b5c6d"
 ```
 
+### ⚠️ 字节序：.NET 与 Java 的 UUID 字节布局是**反的**
+
+Windows 端最后一步是 `new Guid(bytes).ToString()` —— 而 .NET 的 `Guid`
+**前三个字段是小端**（Java 的 `UUID` 全是大端）。所以：
+
+- 喂给 SHA1 的"命名空间 16 字节"，.NET 侧实际是 `Guid.ToByteArray()` 的结果（小端）
+- 输出时 .NET 打印的也是小端解释的那三个字段
+
+Java 端必须**照样做一次字节换序**，才能打印出同一个字符串。实测（`name = "list:论语"`）：
+
+| 实现 | 结果 |
+|---|---|
+| Windows（基准，已存进用户数据里） | `5cbd5673-d822-a659-84e1-4fadcc544464` ✅ |
+| Java：命名空间转小端 + 输出前换序 | `5cbd5673-d822-a659-84e1-4fadcc544464` ✅ |
+| Java：照 RFC 直写（不换序） | `7356bd5c-22d8-59a6-84e1-4fadcc544464` ❌ |
+| Java：命名空间也用大端 | `4ff3f2bc-100c-4657-96a5-393c79ae3229` ❌ |
+
+也就是说：**这不是标准 v5 UUID**，只是"两端一致"的确定性算法。改任何一端之前，
+先拿上面这行基准值对一遍（验证脚本思路见 `%TEMP%\yiju_uuid2.ps1`）。
+
+另一个参考值：`"preset:论语:0"` → `5df0179d-4a9b-e950-98e5-00ad8a1a1cf8`。
+
 ## 3. 合并规则
 
 对每一层（列表、句子）分别合并，按 uuid 对齐：
