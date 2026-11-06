@@ -9,9 +9,13 @@ using Yiju.Helpers;
 namespace Yiju.Services;
 
 /// <summary>
-/// 多端同步（坚果云 WebDAV 单文件），规则见 docs/sync-spec.md。
+/// 多端同步（坚果云 WebDAV 单文件）。规格见知识库《多端同步规格》，
+/// 踩坑见《多端同步踩坑与解法（通用）》。
 ///
-/// 流程：拉远端 → 按 uuid 合并 → 带 ETag 乐观锁写回；412 说明别人刚写过，重来（最多 3 次）。
+/// 流程：**一次 GET → 按 uuid 合并 → 有变化才一次 PUT**。
+/// 不用 ETag / If-Match / 重试：坚果云 ETag 实测不可信（GET 刚拿到的值原样 PUT 会 412），
+/// 带锁和重试都只是白绕一圈；并发窗口只有零点几秒，靠合并的幂等性兜底即可。
+/// 这与新项目（桌面进度条）的同步策略一致，也与 Android 端逐字对齐。
 ///
 /// 两个刻意的设计：
 ///   - **内容变了不立刻传**，攒 10 秒再传。坚果云免费账户有流量限制，
@@ -78,42 +82,38 @@ public sealed class SyncService
         try
         {
             var dav = new WebDavClient(s.Url, s.User, s.Password);
+            await dav.EnsureDirAsync();
 
-            for (var attempt = 1; attempt <= 3; attempt++)
+            var (exists, remoteJson) = await dav.FetchAsync();
+            var local = _store.AllIncludingDeleted.ToList();
+
+            // 远端还没有 → 把本地这份直接放上去（本地也是空库就别写一个空文件）
+            if (!exists)
             {
-                await dav.EnsureDirAsync();
-
-                // 存在性只看 GET 是不是 404；ETag 只是可选的乐观锁，没有也能同步
-                // （合并本身是幂等的，最坏情况不过是各端多写一次，不会丢数据）
-                var (exists, etag, remoteJson) = await dav.FetchAsync();
-
-                // 远端还没有 → 把本地这份直接放上去
-                if (!exists)
-                {
-                    if (!await dav.UploadAsync(_store.Serialize(), null)) continue;
-                    return Finish("已上传到云端（首次同步）");
-                }
-
-                var remote = SentenceStore.Parse(remoteJson) ?? new List<SentenceList>();
-                var merged = Merge(_store.AllIncludingDeleted.ToList(), remote);
-                var mergedJson = SentenceStore.ToJson(merged, _store.DeviceId);
-
-                // 合并结果跟远端一样 → 没必要写远端（也避免"同步触发保存再同步"的空转）
-                if (string.Equals(mergedJson, remoteJson, StringComparison.Ordinal))
-                {
-                    var localJson = _store.Serialize();
-                    if (!string.Equals(mergedJson, localJson, StringComparison.Ordinal))
-                        _store.ReplaceAll(merged);
-                    return Finish("已是最新（从云端取回改动）");
-                }
-
-                if (!await dav.UploadAsync(mergedJson, etag)) continue;   // 412：别人刚写过，重来
-
-                _store.ReplaceAll(merged);
-                return Finish($"同步完成（第 {attempt} 次尝试）");
+                if (local.Count == 0) return Finish("云端还没有数据（本地也是空的）");
+                await dav.UploadAsync(SentenceStore.ToJson(SortedForWire(local), _store.DeviceId));
+                return Finish("已上传到云端（首次同步）");
             }
 
-            return Finish("同步失败：云端一直被别的一端改写，稍后再试");
+            var remote = SentenceStore.Parse(remoteJson) ?? new List<SentenceList>();
+            var merged = Merge(local, remote);
+
+            // 只比 lists，**不要把整个文件拿去比**：文件里的 deviceId 是"最后谁写的"，
+            // 两端各不相同，比它会导致一来一回互相覆盖、来回空转。
+            var mergedPayload = SentenceStore.ToJsonLists(merged);
+            var remotePayload = SentenceStore.ToJsonLists(remote);
+            var localPayload = SentenceStore.ToJsonLists(local);
+
+            if (string.Equals(mergedPayload, remotePayload, StringComparison.Ordinal))
+            {
+                if (!string.Equals(mergedPayload, localPayload, StringComparison.Ordinal))
+                    _store.ReplaceAll(merged);
+                return Finish("已是最新（从云端取回改动）");
+            }
+
+            await dav.UploadAsync(SentenceStore.ToJson(merged, _store.DeviceId));
+            _store.ReplaceAll(merged);
+            return Finish("同步完成");
         }
         catch (Exception ex)
         {
@@ -137,14 +137,31 @@ public sealed class SyncService
         return msg;
     }
 
-    // ===== 合并（docs/sync-spec.md §3） =====
+    // ===== 合并（知识库《多端同步规格》§3） =====
 
-    /// <summary>按 uuid 对齐合并。幂等：两台设备各跑一次，结果相同</summary>
+    /// <summary>写出去之前固定按 uuid 升序（列表层 + 条目层），保证 wire format 字节级确定</summary>
+    private static List<SentenceList> SortedForWire(IEnumerable<SentenceList> lists) =>
+        lists.OrderBy(l => l.Uuid, StringComparer.Ordinal)
+            .Select(l =>
+            {
+                var c = CloneList(l);
+                c.Items = l.Items.OrderBy(i => i.Uuid, StringComparer.Ordinal).ToList();
+                return c;
+            })
+            .ToList();
+
+    /// <summary>
+    /// 按 uuid 对齐合并。**幂等**，且结果固定按 uuid 升序：
+    /// 如果按"我这边原来的顺序"排，两端会各自认为跟对方不一样，
+    /// 轮流把同样的数据按自己的顺序重写一遍，永远在空转。
+    /// </summary>
     public static List<SentenceList> Merge(List<SentenceList> mine, List<SentenceList> theirs)
     {
         var result = new List<SentenceList>();
 
-        foreach (var uuid in mine.Concat(theirs).Select(x => x.Uuid).Where(u => u.Length > 0).Distinct())
+        var uuids = mine.Concat(theirs).Select(x => x.Uuid)
+            .Where(u => u.Length > 0).Distinct().OrderBy(u => u, StringComparer.Ordinal);
+        foreach (var uuid in uuids)
         {
             var m = mine.FirstOrDefault(x => x.Uuid == uuid);
             var t = theirs.FirstOrDefault(x => x.Uuid == uuid);
@@ -170,7 +187,9 @@ public sealed class SyncService
     {
         var result = new List<Sentence>();
 
-        foreach (var uuid in mine.Concat(theirs).Select(x => x.Uuid).Where(u => u.Length > 0).Distinct())
+        var uuids = mine.Concat(theirs).Select(x => x.Uuid)
+            .Where(u => u.Length > 0).Distinct().OrderBy(u => u, StringComparer.Ordinal);
+        foreach (var uuid in uuids)
         {
             var m = mine.FirstOrDefault(x => x.Uuid == uuid);
             var t = theirs.FirstOrDefault(x => x.Uuid == uuid);
@@ -183,17 +202,27 @@ public sealed class SyncService
         return result;
     }
 
-    /// <summary>最后写入者胜；时间戳完全一样时按内容定序，保证两端收敛到同一结果</summary>
+    /// <summary>
+    /// 时间戳完全相同时的定序键。**两端必须逐字一致**：Android 端用
+    /// `text + "|" + source + "|" + (deleted ? "1" : "0")`，并挑**较大**的那个。
+    /// 否则同一毫秒两端各改一次会各选各的、永远收敛不了。
+    /// </summary>
+    public static string TieKeyList(SentenceList x) => x.Name + "|" + (x.Deleted ? "1" : "0");
+
+    public static string TieKeySentence(Sentence x) =>
+        x.Text + "|" + x.Source + "|" + (x.Deleted ? "1" : "0");
+
+    /// <summary>最后写入者胜；时间戳完全一样时按上面的键挑较大者</summary>
     private static bool Newer(SentenceList a, SentenceList b)
     {
         if (a.UpdatedAt != b.UpdatedAt) return a.UpdatedAt > b.UpdatedAt;
-        return string.CompareOrdinal(a.Name, b.Name) <= 0;
+        return string.CompareOrdinal(TieKeyList(a), TieKeyList(b)) >= 0;
     }
 
     private static bool Newer(Sentence a, Sentence b)
     {
         if (a.UpdatedAt != b.UpdatedAt) return a.UpdatedAt > b.UpdatedAt;
-        return string.CompareOrdinal(a.Text + "|" + a.Source, b.Text + "|" + b.Source) <= 0;
+        return string.CompareOrdinal(TieKeySentence(a), TieKeySentence(b)) >= 0;
     }
 
     private static SentenceList CloneList(SentenceList x) => new()

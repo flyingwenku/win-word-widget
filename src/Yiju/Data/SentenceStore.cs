@@ -11,7 +11,7 @@ namespace Yiju.Data;
 /// <summary>
 /// 句子库：多个有名字的列表 + 句子增删改查。
 ///
-/// 文件格式 v3（多端同步的地基，规格见 docs/sync-spec.md）：
+/// 文件格式 v3（多端同步的地基，规格见 知识库《多端同步规格》）：
 ///   {"v":3, "deviceId":…, "lists":[ {"uuid":…,"n":…,"updatedAt":…,"deleted":…,
 ///                                    "items":[{"uuid":…,"t":…,"s":…,"updatedAt":…,"deleted":…}]} ]}
 ///
@@ -290,7 +290,20 @@ public sealed class SentenceStore
             Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping
         });
 
-    private static JsonObject Root(IEnumerable<SentenceList> lists, string deviceId)
+    /// <summary>
+    /// 只序列化 lists 部分，用来判断"内容是不是真的变了"。
+    ///
+    /// 为什么不能直接拿整个文件比：文件里还有 deviceId（表示"最后是谁写的"），
+    /// 两台设备的 deviceId 必然不同。拿它参与比较，两端就会你写一次我写一次地来回空转，
+    /// 而且互相把对方撞成 412（手机端报"云端一直被别的一端改写"的真凶）。
+    /// </summary>
+    public static string ToJsonLists(IEnumerable<SentenceList> lists) =>
+        ListArray(lists).ToJsonString(new JsonSerializerOptions
+        {
+            Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping
+        });
+
+    private static JsonArray ListArray(IEnumerable<SentenceList> lists)
     {
         var arr = new JsonArray();
         foreach (var l in lists)
@@ -319,13 +332,16 @@ public sealed class SentenceStore
             });
         }
 
-        return new JsonObject
+        return arr;
+    }
+
+    private static JsonObject Root(IEnumerable<SentenceList> lists, string deviceId) =>
+        new()
         {
             ["v"] = FormatVersion,
             ["deviceId"] = deviceId,
-            ["lists"] = arr
+            ["lists"] = ListArray(lists)
         };
-    }
 
     /// <summary>解析另一端传来的文本（认不出就返回 null，交给调用方当"没有远端数据"处理）</summary>
     public static List<SentenceList> Parse(string json)

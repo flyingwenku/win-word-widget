@@ -9,7 +9,7 @@ namespace Yiju.Services;
 /// 随机下一句 / 顺序下一句 / 每日一句 / 固定这一句
 ///
 /// 注意这里一律用 **Uuid** 而不是数字 id 指向列表和句子 ——
-/// 数字 id 是各端自己记账的，跨设备不是同一个东西（见 docs/sync-spec.md）。
+/// 数字 id 是各端自己记账的，跨设备不是同一个东西（见 知识库《多端同步规格》）。
 /// </summary>
 internal static class Picker
 {
